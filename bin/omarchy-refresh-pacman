@@ -1,10 +1,9 @@
 #!/bin/bash
 
-# omarchy:summary=Overwrite the package configuration for /etc/pacman with the Omarchy default of using its dedicated mirrors and repositories, then update all packages.
+# omarchy:summary=Reset the pacman config to the Omarchy channel defaults (keeping platform repositories on ARM), then update all packages.
 # omarchy:requires-sudo=true
 
-sudo cp -f /etc/pacman.conf /etc/pacman.conf.bak
-sudo cp -f /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak
+set -eo pipefail
 
 channel="${1:-stable}"
 
@@ -13,11 +12,43 @@ if [[ $channel != "stable" && $channel != "rc" && $channel != "edge" ]]; then
   exit 1
 fi
 
+architecture=$(uname -m)
+config="$OMARCHY_PATH/default/pacman/pacman-$channel.conf"
+if [[ $architecture == "aarch64" ]]; then
+  # ARM installations can use ALARM or platform-specific repositories, with
+  # inline servers or their own mirrorlist, so no single template fits them.
+  # Keep that configuration and its signature policy; only switch the known
+  # Omarchy channel endpoint, and refuse anything unrecognised.
+  config=$(mktemp)
+  trap 'rm -f "$config"' EXIT
+  if ! sudo cat /etc/pacman.conf | awk -v channel="$channel" '
+    /^[[:space:]]*\[/ { omarchy = ($0 ~ /^[[:space:]]*\[omarchy\][[:space:]]*$/) }
+    omarchy && /^[[:space:]]*(Server|Include)[[:space:]]*=/ {
+      if ($0 ~ /^[[:space:]]*Server[[:space:]]*=[[:space:]]*https:\/\/pkgs\.omarchy\.org\/(stable|rc|edge)\/(\$arch|aarch64)[[:space:]]*$/) {
+        sub(/\/(stable|rc|edge)\//, "/" channel "/")
+        found++
+      } else {
+        unknown = 1
+      }
+    }
+    { print }
+    END { if (found != 1 || unknown) exit 1 }
+  ' >"$config"; then
+    echo "Error: Cannot identify the ARM Omarchy channel in /etc/pacman.conf; configuration unchanged." >&2
+    exit 1
+  fi
+fi
+
+sudo cp -f /etc/pacman.conf /etc/pacman.conf.bak
+
 echo "Setting channel to $channel"
 echo
 
-sudo cp -f "$OMARCHY_PATH/default/pacman/pacman-$channel.conf" /etc/pacman.conf
-sudo cp -f "$OMARCHY_PATH/default/pacman/mirrorlist-$channel" /etc/pacman.d/mirrorlist
+sudo cp -f "$config" /etc/pacman.conf
+if [[ $architecture != "aarch64" ]]; then
+  sudo cp -f /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak
+  sudo cp -f "$OMARCHY_PATH/default/pacman/mirrorlist-$channel" /etc/pacman.d/mirrorlist
+fi
 
 # Allow user customization of /etc/pacman.conf before the upgrade runs
 omarchy-hook pre-refresh-pacman
