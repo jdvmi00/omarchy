@@ -1,66 +1,73 @@
 #!/bin/bash
+#
+# The ARM recovery migration marks installed Limine recovery packages explicit
+# so orphan cleanup keeps them, and leaves every other package alone.
 
 set -euo pipefail
-source "$(dirname "$0")/base-test.sh"
 
-python3 - <<'PY'
-import os
-from pathlib import Path
-import subprocess
-import tempfile
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 
-source = (Path(os.environ['ROOT']) / 'migrations/1789928586.sh').read_text()
-with tempfile.TemporaryDirectory() as tmp:
-    root = Path(tmp)
-    stub = root / 'bin'
-    stub.mkdir()
-    config = root / 'limine.conf'
-    state = root / 'dependencies'
-    calls = root / 'calls'
-    script = root / 'migration'
-    script.write_text(source.replace('/etc/default/limine', str(config)))
-    commands = {
-        'uname': 'echo "$TEST_ARCH"',
-        'sudo': '[[ ${FAIL_WRITE:-0} == 0 ]] || exit 42; exec "$@"',
-        'pacman': '''
+migration="$ROOT/migrations/1789928586.sh"
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+mkdir -p "$scratch/bin"
+export CALL_LOG="$scratch/calls" DEPS="$scratch/deps"
+export OMARCHY_LIMINE_CONF="$scratch/limine"
+export PATH="$scratch/bin:$PATH"
+
+cat > "$scratch/bin/uname" <<'STUB'
+#!/bin/bash
+echo "${TEST_ARCH:-aarch64}"
+STUB
+cat > "$scratch/bin/sudo" <<'STUB'
+#!/bin/bash
+[[ -z ${FAIL_WRITE:-} ]] || exit 42
+exec "$@"
+STUB
+# DEPS lists the packages installed as dependencies, one per line.
+cat > "$scratch/bin/pacman" <<'STUB'
+#!/bin/bash
 case "$1" in
-  -Qd) grep -Fxq "$2" "$STATE" ;;
+  -Qqd)
+    shift
+    status=0
+    for pkg in "$@"; do grep -qx "$pkg" "$DEPS" && echo "$pkg" || status=1; done
+    exit $status
+    ;;
   -D)
-    [[ $2 == --asexplicit ]] || exit 99
-    shift 2
-    printf '%s\\n' "$*" >> "$CALLS"
-    for pkg in "$@"; do
-      sed -i "/^${pkg}$/d" "$STATE"
-    done
+    printf 'pacman %s\n' "$*" >> "$CALL_LOG"
+    for pkg in "${@:3}"; do sed -i "/^$pkg\$/d" "$DEPS"; done
     ;;
   *) exit 99 ;;
-esac''',
-    }
-    for name, body in commands.items():
-        p = stub / name
-        p.write_text('#!/bin/bash\n' + body + '\n')
-        p.chmod(0o755)
-    env = dict(os.environ, PATH=str(stub) + ':' + os.environ['PATH'],
-               TEST_ARCH='aarch64', STATE=str(state), CALLS=str(calls))
+esac
+STUB
+chmod +x "$scratch/bin/"*
 
-    def run(**extra):
-        return subprocess.run(['bash', '-euo', 'pipefail', str(script)],
-                              env=dict(env, **extra), capture_output=True, text=True)
+run_migration() {
+  : > "$CALL_LOG"
+  bash -euo pipefail "$migration" > /dev/null
+}
 
-    state.write_text('limine\nlimine-mkinitcpio-hook\nlimine-snapper-sync\nsnapper\nunrelated\n')
-    calls.write_text('')
-    assert run().returncode == 0 and not calls.read_text()
-    print('ok - ARM without Limine configuration remains untouched')
-    config.touch()
-    assert run(TEST_ARCH='x86_64').returncode == 0 and not calls.read_text()
-    print('ok - x86 retains its package dependency policy')
-    assert run(FAIL_WRITE='1').returncode == 42 and 'snapper' in state.read_text()
-    print('ok - package database write failure keeps migration pending')
-    assert run().returncode == 0
-    assert calls.read_text().split() == ['limine', 'limine-mkinitcpio-hook', 'limine-snapper-sync', 'snapper']
-    assert state.read_text() == 'unrelated\n'
-    print('ok - legacy ARM recovery stack is retained, unrelated dependencies untouched')
-    calls.write_text('')
-    assert run().returncode == 0 and not calls.read_text()
-    print('ok - explicit and absent packages are untouched on repeat execution')
-PY
+printf '%s\n' limine limine-mkinitcpio-hook limine-snapper-sync snapper unrelated > "$DEPS"
+
+run_migration
+[[ ! -s $CALL_LOG ]] || fail "ARM without a Limine configuration is left alone" "$(<"$CALL_LOG")"
+pass "ARM without a Limine configuration is left alone"
+
+touch "$OMARCHY_LIMINE_CONF"
+TEST_ARCH=x86_64 run_migration
+[[ ! -s $CALL_LOG ]] || fail "x86 keeps its package dependency policy" "$(<"$CALL_LOG")"
+pass "x86 keeps its package dependency policy"
+
+if FAIL_WRITE=1 run_migration; then fail "a failed package database write keeps the migration pending"; fi
+grep -qx snapper "$DEPS" || fail "a failed package database write keeps the migration pending"
+pass "a failed package database write keeps the migration pending"
+
+run_migration
+grep -qx 'pacman -D --asexplicit limine limine-mkinitcpio-hook limine-snapper-sync snapper' "$CALL_LOG" || fail "the recovery stack is marked explicit" "$(<"$CALL_LOG")"
+[[ $(<"$DEPS") == unrelated ]] || fail "unrelated dependencies are untouched" "$(<"$DEPS")"
+pass "the recovery stack is marked explicit and unrelated dependencies are untouched"
+
+run_migration
+[[ ! -s $CALL_LOG ]] || fail "explicit and absent packages are left alone on a repeat run" "$(<"$CALL_LOG")"
+pass "explicit and absent packages are left alone on a repeat run"
