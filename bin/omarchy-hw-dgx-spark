@@ -2,5 +2,7 @@
 
 # omarchy:summary=Detect whether the computer is an NVIDIA DGX Spark.
 
-[[ $(cat /sys/class/dmi/id/sys_vendor 2>/dev/null) == "NVIDIA" ]] &&
-  [[ $(cat /sys/class/dmi/id/product_name 2>/dev/null) == "NVIDIA_DGX_Spark" ]]
+dmi=${OMARCHY_DMI_PATH:-/sys/class/dmi/id}
+
+[[ $(cat "$dmi/sys_vendor" 2>/dev/null) == "NVIDIA" ]] &&
+  [[ $(cat "$dmi/product_name" 2>/dev/null) == "NVIDIA_DGX_Spark" ]]

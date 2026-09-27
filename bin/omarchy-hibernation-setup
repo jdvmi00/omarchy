@@ -24,6 +24,11 @@ if [[ ! -f /sys/power/image_size ]]; then
   exit 0
 fi
 
+if omarchy-sleep-disabled; then
+  echo "Hibernation is turned off on this machine" >&2
+  exit 0
+fi
+
 # When --no-rebuild is set, the caller is responsible for the UKI rebuild
 # (e.g. running before limine-mkinitcpio-hook is installed during initial
 # install), so we only require limine-mkinitcpio when we'd invoke it ourselves.
