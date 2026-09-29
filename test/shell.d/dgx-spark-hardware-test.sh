@@ -8,7 +8,7 @@ detector="$ROOT/bin/omarchy-hw-dgx-spark"
 setup="$ROOT/install/hardware/nvidia-dgx-spark.sh"
 all="$ROOT/install/hardware/all.sh"
 menu="$ROOT/default/omarchy/omarchy-menu.jsonc"
-migration=$(grep -l "nvidia-dgx-spark.sh" "$ROOT"/migrations/*.sh | head -1)
+migration=$(grep -l "nvidia-dgx-spark.sh" "$ROOT"/migrations/*.sh | head -1 || true)
 
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -96,13 +96,11 @@ run spark "$scratch/spark" bash "$ROOT/bin/omarchy-toggle-suspend"
 ! grep -q '^toggle ' "$CALL_LOG" || fail "the suspend toggle does nothing while sleep is disabled"
 grep -q '^notify .*Suspend is turned off on this machine' "$CALL_LOG" ||
   fail "the suspend toggle says suspend is turned off"
-hibernation=$(run spark "$scratch/spark" bash "$ROOT/bin/omarchy-hibernation-setup" 2>&1) ||
+# Refuse sudo so a missing check cannot reach this machine's swap or boot files.
+hibernation=$(TEST_SUDO_STATUS=1 run spark "$scratch/spark" bash "$ROOT/bin/omarchy-hibernation-setup" 2>&1) ||
   fail "hibernation setup exits cleanly while sleep is disabled"
-# Without kernel hibernation support the script stops earlier, before this check.
-if [[ -f /sys/power/image_size ]]; then
-  [[ $hibernation == *"Hibernation is turned off on this machine"* ]] ||
-    fail "hibernation setup says hibernation is turned off" "$hibernation"
-fi
+[[ $hibernation == *"Hibernation is turned off on this machine"* ]] ||
+  fail "hibernation setup says hibernation is turned off" "$hibernation"
 ! grep -qE '^(gum|btrfs|swapon|sudo) ' "$CALL_LOG" ||
   fail "hibernation setup creates no swap while sleep is disabled"
 pass "the suspend toggle and hibernation setup respect the disabled setting"
@@ -116,7 +114,7 @@ cat >"$scratch/bin/omarchy-toggle-enabled" <<'SH'
 SH
 cat >"$scratch/bin/omarchy-hibernation-available" <<'SH'
 #!/bin/bash
-true
+[[ ${TEST_HIBERNATION_OFF:-0} != 1 ]]
 SH
 chmod +x "$scratch/bin"/*
 for item in system.suspend system.hibernate; do
@@ -128,4 +126,6 @@ for item in system.suspend system.hibernate; do
 done
 TEST_SUSPEND_OFF=1 run other "$scratch/none" bash -c "$(guard system.suspend)" &&
   fail "the suspend toggle still hides Suspend"
+TEST_HIBERNATION_OFF=1 run other "$scratch/none" bash -c "$(guard system.hibernate)" &&
+  fail "Hibernate stays hidden until hibernation is set up"
 pass "the menu hides Suspend and Hibernate only while sleep is disabled"
