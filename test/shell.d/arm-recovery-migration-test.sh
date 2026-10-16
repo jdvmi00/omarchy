@@ -71,3 +71,9 @@ pass "the recovery stack is marked explicit and unrelated dependencies are untou
 run_migration
 [[ ! -s $CALL_LOG ]] || fail "explicit and absent packages are left alone on a repeat run" "$(<"$CALL_LOG")"
 pass "explicit and absent packages are left alone on a repeat run"
+
+printf '%s\n' limine snapper unrelated > "$DEPS"
+run_migration
+[[ $(<"$CALL_LOG") == 'pacman -D --asexplicit limine snapper' ]] || fail "only the installed recovery subset is marked explicit" "$(<"$CALL_LOG")"
+[[ $(<"$DEPS") == unrelated ]] || fail "a partial stack leaves unrelated dependencies untouched" "$(<"$DEPS")"
+pass "a partial recovery stack is retained even when the package query exits nonzero"
