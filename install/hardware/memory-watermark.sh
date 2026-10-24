@@ -31,6 +31,9 @@ CONF
   # the file covers the installed system's boot.
   sysctl -q -p "$watermark_conf" >/dev/null ||
     echo "Warning: could not apply $watermark_conf until the next boot" >&2
-else
+elif [[ -f $watermark_conf ]]; then
+  # The machine has dropped to 32 GB or less since the cap was written.
   rm -f "$watermark_conf"
+  sysctl -q -w vm.watermark_scale_factor="$watermark_shipped_factor" >/dev/null ||
+    echo "Warning: could not restore vm.watermark_scale_factor until the next boot" >&2
 fi

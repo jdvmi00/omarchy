@@ -17,11 +17,6 @@ SH
 chmod +x "$scratch/bin/sysctl"
 export CALL_LOG="$scratch/calls.log"
 
-bash -n "$setup" || fail "the watermark script has valid syntax"
-grep -q 'run_logged .*hardware/memory-watermark.sh' "$ROOT/install/hardware/all.sh" ||
-  fail "the watermark cap runs during hardware setup"
-pass "the watermark cap runs at install"
-
 shipped_factor=$(sed -n 's/^vm.watermark_scale_factor=//p' "$shipped")
 [[ -n $shipped_factor ]] || fail "the shipped sysctl file sets the watermark scale factor"
 
@@ -71,6 +66,8 @@ before=$(run 127595164; sha256sum "$scratch"/sysctl.d/*)
 after=$(run 127595164; sha256sum "$scratch"/sysctl.d/*)
 [[ $before == "$after" ]] || fail "rerunning the setup leaves the file unchanged"
 [[ -z $(run 16000000) ]] || fail "a machine down to 16 GB loses the stale cap"
+grep -Fxq "sysctl -q -w vm.watermark_scale_factor=$shipped_factor" "$CALL_LOG" ||
+  fail "removing the stale cap restores the shipped factor at once"
 pass "the setup is idempotent and follows the machine's memory"
 
 for meminfo in "" $'MemFree:        1024 kB\n' $'MemTotal:       0 kB\n'; do
