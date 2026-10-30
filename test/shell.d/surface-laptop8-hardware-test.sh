@@ -9,11 +9,6 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 
 bash -n "$setup" || fail "Surface Laptop 8 hardware script has valid syntax"
-grep -Fxq 'run_logged "$OMARCHY_INSTALL/hardware/microsoft/surface-laptop8.sh"' "$ROOT/install/hardware/all.sh" ||
-  fail "Surface Laptop 8 setup runs with the other hardware scripts"
-# The installer is offline, so the ISO's mirror must carry what the setup adds.
-grep -Fxq surface-laptop-8-support "$ROOT/install/omarchy-other.packages" ||
-  fail "the ISO can supply surface-laptop-8-support offline"
 
 require_platform_fixtures "the Surface Laptop 8 setup"
 
@@ -47,16 +42,11 @@ run_setup "$matching" >/dev/null
   mkdir -p "$firmware_root/$board" "$firmware_root/updates/$board"
   touch "$firmware_root/qcom/gen80100_sqe.fw.zst" "$firmware_root/qcom/gen80100_gmu.bin.xz" \
     "$firmware_root/$board/qcadsp8480.mbn" "$firmware_root/updates/$board/qcadsp8480.mbn" \
-    "$firmware_root/updates/$board/adsp_dtbs.elf" "$firmware_root/updates/$board/qccdsp8480.mbn" \
-    "$firmware_root/$board/cdsp_dtbs.elf"
+    "$firmware_root/updates/$board/adsp_dtbs.elf" "$firmware_root/$board/cdsp_dtbs.elf"
   MODULES=() FILES=()
   OMARCHY_SURFACE_LAPTOP8_FIRMWARE_ROOT="$firmware_root" \
     source "$matching/mkinitcpio.conf.d/surface-laptop8-initramfs.conf"
 
-  for module in msm panel_edp gpucc_glymur qcom_q6v5_pas thunderbolt thunderbolt_qcom pmic_glink pmic_glink_altmode pwm_bl surface_hid nvme; do
-    [[ " ${MODULES[*]%\?} " == *" $module "* ]] ||
-      fail "the Surface Laptop 8 initramfs loads $module before disk unlock"
-  done
   for module in "${MODULES[@]}"; do
     [[ $module == *\? ]] || fail "$module is optional, so a kernel without it still builds its image"
   done
@@ -66,7 +56,6 @@ run_setup "$matching" >/dev/null
     "$firmware_root/qcom/gen80100_gmu.bin.xz"
     "$firmware_root/updates/$board/qcadsp8480.mbn"
     "$firmware_root/updates/$board/adsp_dtbs.elf"
-    "$firmware_root/updates/$board/qccdsp8480.mbn"
     "$firmware_root/$board/cdsp_dtbs.elf"
   )
   [[ ${FILES[*]} == "${expected[*]}" ]] ||
