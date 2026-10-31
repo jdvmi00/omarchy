@@ -2,7 +2,7 @@
 
 mkinitcpio_dir=${OMARCHY_SURFACE_LAPTOP8_MKINITCPIO_DIR:-/etc/mkinitcpio.conf.d}
 
-if omarchy-hw-aarch64-qualcomm && omarchy-hw-match-device-tree microsoft,surface-laptop8; then
+if omarchy-hw-aarch64-qualcomm && omarchy-hw-match-device-tree microsoft,surface-laptop-8-13p8; then
   echo "Detected Microsoft Surface Laptop 8, applying board-specific support..."
 
   # Bring up the panel and the keyboard before disk unlock. As in

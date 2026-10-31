@@ -31,7 +31,7 @@ compatible() {
 }
 
 matching="$scratch/matching"
-compatible "$matching" 'microsoft,surface-laptop8\0qcom,mahua\0'
+compatible "$matching" 'microsoft,surface-laptop-8-13p8\0qcom,mahua\0'
 run_setup "$matching" >/dev/null
 [[ $(<"$matching/packages.log") == $'add surface-laptop-8-support\nusb4 --no-rebuild' ]] ||
   fail "Surface Laptop 8 setup adds its hardware support, then copies the USB4 router firmware without stopping on failure"
